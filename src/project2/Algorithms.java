@@ -18,291 +18,6 @@ public class Algorithms {
 
 	private static int count = 0;
 	
-	/**
-	 * Sort the relation using Setting.memorySize buffers of memory
-	 * @param rel is the relation to be sorted.
-	 * @return the number of IO cost (in terms of reading and writing blocks)
-	 */
-	public int mergeSortRelation(Relation rel) {
-		int numIO = 0;
-		int M = Setting.memorySize;
-	
-		if (Math.pow(M, 2) < rel.getNumBlocks()) {
-			System.out.println("Size of memory not enough for MergeSort.");
-			return 0;
-		}
-		
-		// Produce sorted sublist
-		Pair<Integer, List<Relation>> ret = sortedSubList(rel);
-		numIO += ret.getLeft();
-		List<Relation> sublists = ret.getRight();
-
-		// Phase 2: Merge the sorted sublist
-		int sublistSize = sublists.size();  
-		List<Block> mainMemoryBuffers = new ArrayList<Block>(M);
-		
-		for (int i = 0; i < M-1; i++) {
-			mainMemoryBuffers.add(null);
-		}
-		
-		// Add Output Buffer at last index
-		mainMemoryBuffers.add(new Block());
-		
-		Relation newRel = new Relation("NewRel");
-		RelationWriter newRelWriter = newRel.getRelationWriter();
-		
-		ArrayList<RelationLoader> loaderList = new ArrayList<Relation.RelationLoader>();
-		
-		for (int i = 0; i < sublists.size(); i++) {
-			RelationLoader loader = sublists.get(i).getRelationLoader();
-			loaderList.add(i, loader);
-		}
-		
-		int tupleCount = rel.getNumTuples();
-		
-		while (tupleCount > 0) {
-			
-			// Always check if input buffer needs to be replenished
-			for (int memoryIndex = 0; memoryIndex < M-1; memoryIndex++) {
-				if (mainMemoryBuffers.get(memoryIndex) == null) {
-					if (memoryIndex < loaderList.size()) {
-						RelationLoader loader = loaderList.get(memoryIndex);
-						
-						if (loader.hasNextBlock()) {
-							Block block = loader.loadNextBlocks(1)[0];
-							mainMemoryBuffers.set(memoryIndex, block);
-							numIO++;
-						}
-					}
-				}
-			}
-			
-			int minKey = -1;
-			int position = -1;
-			for (int memoryIndex = 0; memoryIndex < M-1; memoryIndex++) {
-				
-				if (mainMemoryBuffers.get(memoryIndex) != null && 
-						(mainMemoryBuffers.get(memoryIndex).tupleLst.get(0).key <= minKey || minKey == -1)) {
-					minKey = mainMemoryBuffers.get(memoryIndex).tupleLst.get(0).key;
-					position = memoryIndex;
-				}
-			}
-			
-			if (position > -1) {
-				Block minBlock = mainMemoryBuffers.get(position);
-				if (minBlock != null) {
-					Tuple minTuple = minBlock.tupleLst.get(0);
-					minBlock.tupleLst.remove(0);
-					
-					if (minBlock.getNumTuples() == 0) {
-						mainMemoryBuffers.set(position, null);
-					}
-					
-					mainMemoryBuffers.get(M-1).tupleLst.add(minTuple);
-					if (mainMemoryBuffers.get(M-1).getNumTuples() == Setting.blockFactor) {
-						newRelWriter.writeBlock(mainMemoryBuffers.get(M-1));
-						tupleCount -= Setting.blockFactor;
-						mainMemoryBuffers.set(M-1, new Block());
-					}
-				}
-			}
-			else { // Last Block
-				Block lastBlock = mainMemoryBuffers.get(M-1);
-				newRelWriter.writeBlock(lastBlock);
-				tupleCount -= lastBlock.getNumTuples();
-			}
-		}
-		
-		newRel.printRelation(true, true);
-		return numIO;
-	}
-
-	/**
-	 * Join relations relR and relS using Setting.memorySize buffers of memory
-	 * to produce the result relation relRS
-	 * 
-	 * @param relR is one of the relation in the join
-	 * @param relS is the other relation in the join
-	 * @param relRS is the result relation of the join
-	 * @return the number of IO cost (in terms of reading and writing blocks)
-	 */
-	public int hashJoinRelations(Relation relR, Relation relS, Relation relRS) {
-		int numIO = 0;
-		int M = Setting.memorySize;
-		Block[] mainMemoryBuffers = new Block[M];
-		ArrayList<ArrayList<Block>> rBuckets = new ArrayList<ArrayList<Block>>(M - 1);
-		ArrayList<ArrayList<Block>> sBuckets = new ArrayList<ArrayList<Block>>(M - 1);
-		ArrayList<JointTuple> jointTupleList = new ArrayList<JointTuple>();
-		
-		if (Math.min(relR.getNumBlocks(), relR.getNumBlocks()) > M * M) {
-			System.out.println("Not enough memory for Hash Join. Try to increase memory.");
-			return 0;
-		}
-		
-		// Initialize M-1 Memory Buffers. Last index of buffer will be used as input buffer
-		for (int i = 0; i < M - 1; i++) {
-			mainMemoryBuffers[i] = new Block();
-		}
-
-		// Initialize M-1 buckets for relation R & S
-		// This will simulate the buckets that will be found on disk
-		for (int i = 0; i < M - 1; i++) {
-			ArrayList<Block> rBucket = new ArrayList<Block>(M-1);
-			rBuckets.add(rBucket);
-			ArrayList<Block> sBucket = new ArrayList<Block>(M-1);
-			sBuckets.add(sBucket);
-		}
-
-		// Hash Relation R
-		RelationLoader rLoader = relR.getRelationLoader();
-		while (rLoader.hasNextBlock()) {
-			Block[] blocks = rLoader.loadNextBlocks(1);
-			numIO++;
-
-			// read block b into Mth buffer
-			mainMemoryBuffers[M-1] = blocks[0];
-			ArrayList<Tuple> tupleList = (ArrayList<Tuple>)mainMemoryBuffers[M-1].tupleLst.clone();
-
-			for (Tuple tuple : tupleList) {
-
-				int bucketToHashTo = tuple.key % (M - 1);
-				
-				if (mainMemoryBuffers[bucketToHashTo].getNumTuples() == Setting.blockFactor) {
-
-					Block fullBuffer = mainMemoryBuffers[bucketToHashTo];
-					ArrayList<Block> hashBucket = rBuckets.get(bucketToHashTo);
-
-					// Copy buffer to disk
-					hashBucket.add(fullBuffer);
-					numIO++;
-
-					// Initialize new empty block in buffer
-					mainMemoryBuffers[bucketToHashTo] = new Block();
-				}
-
-				mainMemoryBuffers[bucketToHashTo].insertTuple(tuple);
-			}
-		}
-
-		for (int i = 0; i < M - 1; i++) {
-			if (mainMemoryBuffers[i].getNumTuples() > 0) {
-				ArrayList<Block> hashBucket = rBuckets.get(i);
-				hashBucket.add(mainMemoryBuffers[i]);
-				numIO++;
-			}
-			
-			// Reset memory buffer for S use later
-			mainMemoryBuffers[i] = new Block();
-		}
-
-		for (int i = 0; i < rBuckets.size(); i++) {			
-			ArrayList<Block> blocks = rBuckets.get(i);
-			System.out.println("R Bucket " + i + " has size " + blocks.size());
-		}
-		
-		// Hash Relation S
-		RelationLoader sLoader = relS.getRelationLoader();
-		while (sLoader.hasNextBlock()) {
-			Block[] blocks = sLoader.loadNextBlocks(1);
-			numIO++;
-
-			// read block b into Mth buffer
-			mainMemoryBuffers[M-1] = blocks[0];
-			ArrayList<Tuple> tupleList = (ArrayList<Tuple>)mainMemoryBuffers[M-1].tupleLst.clone();
-
-			for (Tuple tuple : tupleList) {
-
-				int bucketToHashTo = tuple.key % (M - 1);
-
-				if (mainMemoryBuffers[bucketToHashTo].getNumTuples() == Setting.blockFactor) {
-
-					Block fullBuffer = mainMemoryBuffers[bucketToHashTo];
-					ArrayList<Block> hashBucket = sBuckets.get(bucketToHashTo);
-
-					// Copy buffer to disk
-					hashBucket.add(fullBuffer);
-					numIO++;
-
-					// Initialize new empty block in buffer
-					mainMemoryBuffers[bucketToHashTo] = new Block();
-				}
-
-				mainMemoryBuffers[bucketToHashTo].insertTuple(tuple);
-			}
-		}
-				
-		for (int i = 0; i < M - 1; i++) {
-			if (mainMemoryBuffers[i].getNumTuples() > 0) {
-				ArrayList<Block> hashBucket = sBuckets.get(i);
-				hashBucket.add(mainMemoryBuffers[i]);
-				numIO++;
-			}
-			
-			// Reset memory buffer for Hash Join use later
-			mainMemoryBuffers[i] = null;
-		}
-		
-		for (int i = 0; i < sBuckets.size(); i++) {
-			ArrayList<Block> blocks = sBuckets.get(i);
-			System.out.println("S Bucket " + i + " has size " + blocks.size());
-		}
-		
-		// Hash Join
-		for (int i = 0; i < sBuckets.size(); i++) {
-			
-			ArrayList<Block> sBucket = sBuckets.get(i);
-			ArrayList<Block> rBucket = rBuckets.get(i);
-			
-			// Read in blocks from one bucket of S
-			for (int x = 0; x < sBucket.size(); x++) {
-				mainMemoryBuffers[x] = sBucket.get(x);
-				numIO++;
-			}
-			
-			// Read in one block from one bucket of R
-			for (Block rBlock : rBucket) {
-				numIO++;
-				
-				for (int y = 0; y < sBucket.size(); y++) {
-					
-					// Compare each block
-					Block sBlock = mainMemoryBuffers[y];
-					
-					for (int sIndex = 0; sIndex < sBlock.getNumTuples(); sIndex++) {
-						for (int rIndex = 0; rIndex < rBlock.getNumTuples(); rIndex++) {
-							if (sBlock.tupleLst.get(sIndex).key == rBlock.tupleLst.get(rIndex).key) {
-
-								JointTuple jointTuple = new JointTuple(rBlock.tupleLst.get(rIndex), 
-										sBlock.tupleLst.get(sIndex));
-								jointTupleList.add(jointTuple);
-							}
-						}
-					}
-				}
-			}
-		}
-		
-		RelationWriter rsWriter = relRS.getRelationWriter();
-		Block block = new Block();
-		
-		for (JointTuple jointTuple : jointTupleList) {
-			block.tupleLst.add(jointTuple);
-			
-			if (block.getNumTuples() == Setting.blockFactor) {
-				rsWriter.writeBlock(block);
-				block = new Block();
-			}
-		}
-		
-		// Last block
-		if (block.getNumTuples() > 0) {
-			rsWriter.writeBlock(block);
-		}
-		
-		relRS.printRelation(false, false);
-		return numIO;
-	}
-	
 	static class Pair<Left, Right> {
 
         private final Left left;
@@ -372,7 +87,318 @@ public class Algorithms {
         
         return new Pair<Integer, List<Relation>>(numIO, sublists);
     }
+	
+	/**
+	 * Sort the relation using Setting.memorySize buffers of memory
+	 * @param rel is the relation to be sorted.
+	 * @return the number of IO cost (in terms of reading and writing blocks)
+	 */
+	public int mergeSortRelation(Relation rel) {
+		int numIO = 0;
+		int M = Setting.memorySize;
+	
+		// Check if enough memory buffers
+		if (M * M < rel.getNumBlocks()) {
+			System.out.println("Size of memory not enough for MergeSort.");
+			return 0;
+		}
+		
+		// ---------------------------------
+		// Phase 1: Produce sorted sublist
+		
+		Pair<Integer, List<Relation>> ret = sortedSubList(rel);
+		numIO += ret.getLeft();
+		List<Relation> sortedSubLists = ret.getRight();
 
+		// ---------------------------------
+		// Phase 2: Merge the sorted sublist
+		
+		// Create and instantiate memory buffers
+		List<Block> mainMemoryBuffers = new ArrayList<Block>(M);
+		for (int i = 0; i < M - 1; i++) {
+			mainMemoryBuffers.add(null);
+		}
+		
+		// Add Output Buffer at last index
+		mainMemoryBuffers.add(new Block());
+		
+		Relation newRel = new Relation("NewRel");
+		RelationWriter newRelWriter = newRel.getRelationWriter();
+		
+		// Create a list of relation loader that will hold loader references
+		// for replenishing input buffers later
+		ArrayList<RelationLoader> loaderList = new ArrayList<Relation.RelationLoader>();
+		for (int i = 0; i < sortedSubLists.size(); i++) {
+			RelationLoader loader = sortedSubLists.get(i).getRelationLoader();
+			loaderList.add(i, loader);
+		}
+		
+		int tupleCount = rel.getNumTuples();
+		
+		while (tupleCount > 0) {
+			
+			// Always check if input buffer needs to be replenished
+			for (int memoryIndex = 0; memoryIndex < M - 1; memoryIndex++) {
+				if (mainMemoryBuffers.get(memoryIndex) == null) {
+					if (memoryIndex < loaderList.size()) {
+						RelationLoader loader = loaderList.get(memoryIndex);
+						
+						if (loader.hasNextBlock()) {
+							Block block = loader.loadNextBlocks(1)[0];
+							mainMemoryBuffers.set(memoryIndex, block);
+							numIO++;
+						}
+					}
+				}
+			}
+			
+			int minKey = -1;
+			int position = -1;
+			
+			// Iterate through to get the smallest key & the corresponding memory index from the input buffers
+			for (int memoryIndex = 0; memoryIndex < M-1; memoryIndex++) {
+				if (mainMemoryBuffers.get(memoryIndex) != null && 
+						(mainMemoryBuffers.get(memoryIndex).tupleLst.get(0).key <= minKey || minKey == -1)) {
+					minKey = mainMemoryBuffers.get(memoryIndex).tupleLst.get(0).key;
+					position = memoryIndex;
+				}
+			}
+			
+			// if position equals -1, implies that all blocks have been read and input 
+			// buffers are empty. Proceed to write what's left in output buffer to disk
+			if (position != -1) {
+				
+				// Get block that has the smallest key from input buffers
+				Block minBlock = mainMemoryBuffers.get(position);
+				
+				// Get the tuple with smallest key and remove it from the block
+				Tuple minTuple = minBlock.tupleLst.get(0);
+				minBlock.tupleLst.remove(0);
+
+				// No more tuples in block, set it to null for replenish later
+				if (minBlock.getNumTuples() == 0) {
+					mainMemoryBuffers.set(position, null);
+				}
+
+				// Add tuple to output buffer
+				mainMemoryBuffers.get(M-1).tupleLst.add(minTuple);
+				
+				// Write output buffer to disk if full
+				if (mainMemoryBuffers.get(M-1).getNumTuples() == Setting.blockFactor) {
+					newRelWriter.writeBlock(mainMemoryBuffers.get(M-1));
+					
+					// Decrease tuple count in order to eventually terminate while loop
+					tupleCount -= Setting.blockFactor;
+					
+					// Reset output buffer
+					mainMemoryBuffers.set(M-1, new Block());
+				}
+			}
+			else { // Last Block
+				Block lastBlock = mainMemoryBuffers.get(M-1);
+				newRelWriter.writeBlock(lastBlock);
+				
+				// Decrease tuple count in order to terminate while loop
+				tupleCount -= lastBlock.getNumTuples();
+			}
+		}
+		
+		newRel.printRelation(true, true);
+		return numIO;
+	}
+
+	/**
+	 * Join relations relR and relS using Setting.memorySize buffers of memory
+	 * to produce the result relation relRS
+	 * 
+	 * @param relR is one of the relation in the join
+	 * @param relS is the other relation in the join
+	 * @param relRS is the result relation of the join
+	 * @return the number of IO cost (in terms of reading and writing blocks)
+	 */
+	public int hashJoinRelations(Relation relR, Relation relS, Relation relRS) {
+		int numIO = 0;
+		int M = Setting.memorySize;
+		Block[] mainMemoryBuffers = new Block[M];
+		ArrayList<ArrayList<Block>> rBuckets = new ArrayList<ArrayList<Block>>(M - 1);
+		ArrayList<ArrayList<Block>> sBuckets = new ArrayList<ArrayList<Block>>(M - 1);
+		ArrayList<JointTuple> jointTupleList = new ArrayList<JointTuple>();
+		
+		if (Math.min(relR.getNumBlocks(), relR.getNumBlocks()) > M * M) {
+			System.out.println("Size of memory not enough for Hash Join.");
+			return 0;
+		}
+		
+		// Initialize M-1 Memory Buffers. Last index of buffer will be used as input buffer
+		for (int i = 0; i < M - 1; i++) {
+			mainMemoryBuffers[i] = new Block();
+		}
+
+		// Initialize M-1 buckets for relation R & S
+		// This will simulate the buckets that will be found on disk
+		for (int i = 0; i < M - 1; i++) {
+			ArrayList<Block> rBucket = new ArrayList<Block>(M-1);
+			rBuckets.add(rBucket);
+			ArrayList<Block> sBucket = new ArrayList<Block>(M-1);
+			sBuckets.add(sBucket);
+		}
+
+		// Step 1: Hash Relation R
+		RelationLoader rLoader = relR.getRelationLoader();
+		while (rLoader.hasNextBlock()) {
+			Block[] blocks = rLoader.loadNextBlocks(1);
+			numIO++;
+
+			// read block b into Mth buffer
+			mainMemoryBuffers[M-1] = blocks[0];
+			ArrayList<Tuple> tupleList = (ArrayList<Tuple>)mainMemoryBuffers[M-1].tupleLst.clone();
+
+			for (Tuple tuple : tupleList) {
+
+				int bucketToHashTo = tuple.key % (M - 1);
+				
+				if (mainMemoryBuffers[bucketToHashTo].getNumTuples() == Setting.blockFactor) {
+
+					Block fullBuffer = mainMemoryBuffers[bucketToHashTo];
+					ArrayList<Block> hashBucket = rBuckets.get(bucketToHashTo);
+
+					// Copy buffer to disk
+					hashBucket.add(fullBuffer);
+					numIO++;
+
+					// Initialize new empty block in buffer
+					mainMemoryBuffers[bucketToHashTo] = new Block();
+				}
+
+				mainMemoryBuffers[bucketToHashTo].insertTuple(tuple);
+			}
+		}
+
+		// For each buffer, copy to disk if not empty
+		for (int i = 0; i < M - 1; i++) {
+			if (mainMemoryBuffers[i].getNumTuples() > 0) {
+				ArrayList<Block> hashBucket = rBuckets.get(i);
+				hashBucket.add(mainMemoryBuffers[i]);
+				numIO++;
+			}
+			
+			// Reset memory buffer for S use later
+			mainMemoryBuffers[i] = new Block();
+		}
+		
+//		DELETE LATER		
+//
+//		for (int i = 0; i < rBuckets.size(); i++) {			
+//			ArrayList<Block> blocks = rBuckets.get(i);
+//			System.out.println("R Bucket " + i + " has size " + blocks.size());
+//		}
+//		
+		// Step 1: Hash Relation S
+		RelationLoader sLoader = relS.getRelationLoader();
+		while (sLoader.hasNextBlock()) {
+			Block[] blocks = sLoader.loadNextBlocks(1);
+			numIO++;
+
+			// read block b into Mth buffer
+			mainMemoryBuffers[M-1] = blocks[0];
+			ArrayList<Tuple> tupleList = (ArrayList<Tuple>)mainMemoryBuffers[M-1].tupleLst.clone();
+
+			for (Tuple tuple : tupleList) {
+
+				int bucketToHashTo = tuple.key % (M - 1);
+
+				if (mainMemoryBuffers[bucketToHashTo].getNumTuples() == Setting.blockFactor) {
+
+					Block fullBuffer = mainMemoryBuffers[bucketToHashTo];
+					ArrayList<Block> hashBucket = sBuckets.get(bucketToHashTo);
+
+					// Copy buffer to disk
+					hashBucket.add(fullBuffer);
+					numIO++;
+
+					// Initialize new empty block in buffer
+					mainMemoryBuffers[bucketToHashTo] = new Block();
+				}
+
+				mainMemoryBuffers[bucketToHashTo].insertTuple(tuple);
+			}
+		}
+
+		// For each buffer, copy to disk if not empty
+		for (int i = 0; i < M - 1; i++) {
+			if (mainMemoryBuffers[i].getNumTuples() > 0) {
+				ArrayList<Block> hashBucket = sBuckets.get(i);
+				hashBucket.add(mainMemoryBuffers[i]);
+				numIO++;
+			}
+			
+			// Reset memory buffer for Hash Join use later
+			mainMemoryBuffers[i] = null;
+		}
+		
+		for (int i = 0; i < sBuckets.size(); i++) {
+			ArrayList<Block> blocks = sBuckets.get(i);
+			System.out.println("S Bucket " + i + " has size " + blocks.size());
+		}
+		
+		// Step 2: Perform Join
+		for (int i = 0; i < sBuckets.size(); i++) {
+			
+			ArrayList<Block> sBucket = sBuckets.get(i);
+			ArrayList<Block> rBucket = rBuckets.get(i);
+			
+			// Read in blocks from one bucket of S
+			for (int x = 0; x < sBucket.size(); x++) {
+				mainMemoryBuffers[x] = sBucket.get(x);
+				numIO++;
+			}
+			
+			// Read in one block from one bucket of R
+			for (Block rBlock : rBucket) {
+				numIO++;
+				
+				for (int y = 0; y < sBucket.size(); y++) {
+					
+					// Compare each block
+					Block sBlock = mainMemoryBuffers[y];
+					
+					for (int sIndex = 0; sIndex < sBlock.getNumTuples(); sIndex++) {
+						for (int rIndex = 0; rIndex < rBlock.getNumTuples(); rIndex++) {
+							if (sBlock.tupleLst.get(sIndex).key == rBlock.tupleLst.get(rIndex).key) {
+
+								JointTuple jointTuple = new JointTuple(rBlock.tupleLst.get(rIndex), 
+										sBlock.tupleLst.get(sIndex));
+								jointTupleList.add(jointTuple);
+							}
+						}
+					}
+				}
+			}
+		}
+		
+		
+		// Write join result to disk
+		RelationWriter rsWriter = relRS.getRelationWriter();
+		Block block = new Block();
+		
+		for (JointTuple jointTuple : jointTupleList) {
+			block.tupleLst.add(jointTuple);
+			
+			if (block.getNumTuples() == Setting.blockFactor) {
+				rsWriter.writeBlock(block);
+				block = new Block();
+			}
+		}
+		
+		// Last block
+		if (block.getNumTuples() > 0) {
+			rsWriter.writeBlock(block);
+		}
+		
+		relRS.printRelation(true, true);
+		return numIO;
+	}
+	
 	/**
 	 * Join relations relR and relS using Setting.memorySize buffers of memory
 	 * to produce the result relation relRS
