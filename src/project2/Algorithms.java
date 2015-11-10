@@ -96,6 +96,7 @@ public class Algorithms {
 	public int mergeSortRelation(Relation rel) {
 		int numIO = 0;
 		int M = Setting.memorySize;
+		count = 0;
 	
 		// Check if enough memory buffers
 		if (M * M < rel.getNumBlocks()) {
@@ -109,7 +110,30 @@ public class Algorithms {
 		Pair<Integer, List<Relation>> ret = sortedSubList(rel);
 		numIO += ret.getLeft();
 		List<Relation> sortedSubLists = ret.getRight();
-
+		
+		if (sortedSubLists.size() > M-1) {
+			System.out.println("There are more sorted sublists than M-1, unable to do merge sort.");
+			return 0;
+		}
+			
+		int min = sortedSubLists.get(0).getNumBlocks();
+		int max = sortedSubLists.get(0).getNumBlocks();
+		int total = 0;
+		
+		for (Relation sublist : sortedSubLists) {
+			
+			total += sublist.getNumBlocks();
+			
+			if (sublist.getNumBlocks() < min) {
+				min = sublist.getNumBlocks();
+			}
+			
+			if (sublist.getNumBlocks() > max) {
+				max = sublist.getNumBlocks();
+			}
+		}
+		double avg = (double)total / (double)sortedSubLists.size(); 
+		
 		// ---------------------------------
 		// Phase 2: Merge the sorted sublist
 		
@@ -122,7 +146,7 @@ public class Algorithms {
 		// Add Output Buffer at last index
 		mainMemoryBuffers.add(new Block());
 		
-		Relation newRel = new Relation("NewRel");
+		Relation newRel = new Relation("Sorted" + rel.name);
 		RelationWriter newRelWriter = newRel.getRelationWriter();
 		
 		// Create a list of relation loader that will hold loader references
@@ -134,7 +158,6 @@ public class Algorithms {
 		}
 		
 		int tupleCount = rel.getNumTuples();
-		
 		while (tupleCount > 0) {
 			
 			// Always check if input buffer needs to be replenished
@@ -158,7 +181,7 @@ public class Algorithms {
 			// Iterate through to get the smallest key & the corresponding memory index from the input buffers
 			for (int memoryIndex = 0; memoryIndex < M-1; memoryIndex++) {
 				if (mainMemoryBuffers.get(memoryIndex) != null && 
-						(mainMemoryBuffers.get(memoryIndex).tupleLst.get(0).key <= minKey || minKey == -1)) {
+						(minKey == -1 || mainMemoryBuffers.get(memoryIndex).tupleLst.get(0).key <= minKey)) {
 					minKey = mainMemoryBuffers.get(memoryIndex).tupleLst.get(0).key;
 					position = memoryIndex;
 				}
@@ -177,6 +200,7 @@ public class Algorithms {
 
 				// No more tuples in block, set it to null for replenish later
 				if (minBlock.getNumTuples() == 0) {
+					
 					mainMemoryBuffers.set(position, null);
 				}
 
@@ -203,7 +227,11 @@ public class Algorithms {
 			}
 		}
 		
-		newRel.printRelation(true, true);
+		newRel.printRelation(false, false);
+		System.out.println("Number of sublists generated: " + sortedSubLists.size());
+		System.out.println("Maximum length of sublist: " + max);
+		System.out.println("Minimum length of sublist: " + min);
+		System.out.println("Average length of sublists: " + avg);		
 		return numIO;
 	}
 
@@ -265,7 +293,13 @@ public class Algorithms {
 					// Copy buffer to disk
 					hashBucket.add(fullBuffer);
 					numIO++;
-
+					
+					if (hashBucket.size() > M - 1) {
+						System.out.println("Bucket size exceeded M-1 for Relation " + relR.name + 
+								" at hash " + bucketToHashTo + ", unable to do hash join.");
+						return 0;
+					}
+					
 					// Initialize new empty block in buffer
 					mainMemoryBuffers[bucketToHashTo] = new Block();
 				}
@@ -315,6 +349,12 @@ public class Algorithms {
 					// Copy buffer to disk
 					hashBucket.add(fullBuffer);
 					numIO++;
+					
+					if (hashBucket.size() > M - 1) {
+						System.out.println("Bucket size exceeded M-1 for Relation " + relS.name + 
+								" at hash " + bucketToHashTo + ", unable to do hash join.");
+						return 0;
+					}
 
 					// Initialize new empty block in buffer
 					mainMemoryBuffers[bucketToHashTo] = new Block();
@@ -335,11 +375,12 @@ public class Algorithms {
 			// Reset memory buffer for Hash Join use later
 			mainMemoryBuffers[i] = null;
 		}
-		
-		for (int i = 0; i < sBuckets.size(); i++) {
-			ArrayList<Block> blocks = sBuckets.get(i);
-			System.out.println("S Bucket " + i + " has size " + blocks.size());
-		}
+
+		// DELETE LATER
+//		for (int i = 0; i < sBuckets.size(); i++) {
+//			ArrayList<Block> blocks = sBuckets.get(i);
+//			System.out.println("S Bucket " + i + " has size " + blocks.size());
+//		}
 		
 		// Step 2: Perform Join
 		for (int i = 0; i < sBuckets.size(); i++) {
@@ -395,7 +436,7 @@ public class Algorithms {
 			rsWriter.writeBlock(block);
 		}
 		
-		relRS.printRelation(true, true);
+		relRS.printRelation(false, false);
 		return numIO;
 	}
 	
@@ -412,6 +453,7 @@ public class Algorithms {
 	public int refinedSortMergeJoinRelations(Relation relR, Relation relS, Relation relRS) {
 		int numIO = 0;
         int M = Setting.memorySize;
+        count = 0;
         
 		if ((M * M) < (relR.getNumBlocks() + relS.getNumBlocks())) {
 			System.out.println("Size of memory not enough for Refined Sort Merge Join.");
@@ -428,17 +470,59 @@ public class Algorithms {
         List<Relation> relU = SortedRels.right;
         List<Block> inputBuffers = new ArrayList<Block>();
         List<JointTuple> jointTuples = new ArrayList<JointTuple>();
-        List noOfBlockUsed = new ArrayList();
+        List<Integer> noOfBlockUsed = new ArrayList<Integer>();
         
-        if (M < relT.size() + relU.size()) {
+        if (M * M < relT.size() + relU.size()) {
         	System.out.println("Number of sublists more than M buffer. Try to increase memory size.");
         	return 0;
         }
+        
+		int rMin = relT.get(0).getNumBlocks();
+		int rMax = relT.get(0).getNumBlocks();
+		int rTotal = 0;
+		
+		for (Relation sublist : relT) {
+			
+			rTotal += sublist.getNumBlocks();
+			
+			if (sublist.getNumBlocks() < rMin) {
+				rMin = sublist.getNumBlocks();
+			}
+			
+			if (sublist.getNumBlocks() > rMax) {
+				rMax = sublist.getNumBlocks();
+			}
+		}
+		double rAvg = (double)rTotal / (double)relT.size();
+		
+		int sMin = relU.get(0).getNumBlocks();
+		int sMax = relU.get(0).getNumBlocks();
+		int sTotal = 0;
+		
+		for (Relation sublist : relU) {
+			
+			sTotal += sublist.getNumBlocks();
+			
+			if (sublist.getNumBlocks() < sMin) {
+				sMin = sublist.getNumBlocks();
+			}
+			
+			if (sublist.getNumBlocks() > sMax) {
+				sMax = sublist.getNumBlocks();
+			}
+		}
+		double sAvg = (double)sTotal / (double)relU.size(); 
+        
         
         for (int i = 0; i < M - 1; i++) {
             inputBuffers.add(new Block());
         }
         int i = 0;
+        
+        if (relU.size() + relT.size() > M - 1) {
+        	System.out.println("There are more than M sublists, unable to do refined sort merge join.");
+        	return 0;
+        }
 
         for (Relation t : relT) {
             RelationLoader rLoader = t.getRelationLoader();
@@ -595,7 +679,16 @@ public class Algorithms {
         	rsWriter.writeBlock(rsBlock); //last block
         }
         
-        relRS.printRelation(true, true);
+        relRS.printRelation(false, false);
+		System.out.println("Number of sublists generated for R: " + relT.size());
+		System.out.println("Maximum length of R sublist: " + rMax);
+		System.out.println("Minimum length of R sublist: " + rMin);
+		System.out.println("Average length of R sublists: " + rAvg);
+		System.out.println("Number of sublists generated for S: " + relU.size());
+		System.out.println("Maximum length of S sublist: " + sMax);
+		System.out.println("Minimum length of S sublist: " + sMin);
+		System.out.println("Average length of S sublists: " + sAvg);
+        
         return numIO;
 	}
 
@@ -612,8 +705,7 @@ public class Algorithms {
 		Relation relS = new Relation("RelS");
 		numTuples = relS.populateRelationFromFile("RelS.txt");
 		System.out.println("Relation RelS contains " + numTuples + " tuples.");
-		System.out
-				.println("---------Finish populating relations----------\n\n");
+		System.out.println("---------Finish populating relations----------\n\n");
 
 		/* Print the relation */
 		System.out.println("---------Printing relations----------");
@@ -664,32 +756,118 @@ public class Algorithms {
 	 */
 	public static void testCases() {
 
-		// Insert your test cases here!
+		Relation relR;
+		Relation relS;
+		Relation relRS;
+		
+		int numTuples = 0;
+		int mergeSortRIO = 0;
+		int mergeSortSIO = 0;
+		int hashJoinIO = 0;
+		int refinedSortMergeJoinIO = 0;
 		
 		Algorithms algo = new Algorithms();
 		
-		Relation relR = new Relation("RelR");
-		int numTuples = relR.populateRelationFromFile("RelR.txt");
+		System.out.println("(Test Case 1)");
+		System.out.println("The block factor is " + Setting.blockFactor);
+		System.out.println("The memory size is " + Setting.memorySize);
+		
+		relR = new Relation("RelR");
+		numTuples = relR.populateRelationFromFile("RelR.txt");
 		System.out.println("Relation RelR contains " + numTuples + " tuples.");
 		System.out.println("Relation RelR contains " + relR.getNumBlocks() + " blocks."); 
-		Relation relS = new Relation("RelS");
+		relS = new Relation("RelS");
 		numTuples = relS.populateRelationFromFile("RelS.txt");
 		System.out.println("Relation RelS contains " + numTuples + " tuples.");
 		System.out.println("Relation RelS contains " + relS.getNumBlocks() + " blocks.");
 		System.out.println("---------Finish populating relations----------\n");
 		
-//		int numIO = algo.mergeSortRelation(relR);
-//		System.out.println("Number of Disks I/O for MergeSort: " + numIO);
-//		int numIO = algo.mergeSortRelation(relS);
-//		System.out.println("Number of Disks I/O for MergeSort: " + numIO);
+		System.out.println("[MergeSort Algorithm]");
+		mergeSortRIO = algo.mergeSortRelation(relR);
+		System.out.println("Number of Disks I/O for MergeSort on " + relR.name + ": " + mergeSortRIO + "\n");
+		mergeSortSIO = algo.mergeSortRelation(relS);
+		System.out.println("Number of Disks I/O for MergeSort on " + relS.name + ": " + mergeSortSIO + "\n");
 		
-		Relation relRS = new Relation("RelRS");
-		int numIO = algo.hashJoinRelations(relR, relS, relRS);
-		System.out.println("Number of Disks I/O for Hash Join: " + numIO);
+		System.out.println("[Hash Join Algorithm]");
+		relRS = new Relation("RelRS");
+		hashJoinIO = algo.hashJoinRelations(relR, relS, relRS);
+		System.out.println("Number of Disks I/O for Hash Join: " + hashJoinIO + "\n");
 		
-//		Relation relRS = new Relation("RelRS");
-//		int numIO = algo.refinedSortMergeJoinRelations(relR, relS, relRS);
-//		System.out.println("Number of Disks I/O for Refined Sort Merge Join: " + numIO);
+		System.out.println("[Refined Sort Merge Join Algorithm]");
+		relRS = new Relation("RelRS");
+		refinedSortMergeJoinIO = algo.refinedSortMergeJoinRelations(relR, relS, relRS);
+		System.out.println("Number of Disks I/O for Refined Sort Merge Join: " + refinedSortMergeJoinIO + "\n");
+		System.out.println("------------------------------------------------------------");
+		// ------------------------------------------------------------------------------------
+		
+		System.out.println("(Test Case 2)");
+		Setting.blockFactor = 20;
+		Setting.memorySize = 10;
+		System.out.println("The block factor is " + Setting.blockFactor);
+		System.out.println("The memory size is " + Setting.memorySize);
+		
+		relR = new Relation("RelR");
+		numTuples = relR.populateRelationFromFile("RelR.txt");
+		System.out.println("Relation RelR contains " + numTuples + " tuples.");
+		System.out.println("Relation RelR contains " + relR.getNumBlocks() + " blocks."); 
+		relS = new Relation("RelS");
+		numTuples = relS.populateRelationFromFile("RelS.txt");
+		System.out.println("Relation RelS contains " + numTuples + " tuples.");
+		System.out.println("Relation RelS contains " + relS.getNumBlocks() + " blocks.");
+		System.out.println("---------Finish populating relations----------\n");
+		
+		System.out.println("[MergeSort Algorithm]");
+		mergeSortRIO = algo.mergeSortRelation(relR);
+		System.out.println("Number of Disks I/O for MergeSort on " + relR.name + ": " + mergeSortRIO + "\n");
+		mergeSortSIO = algo.mergeSortRelation(relS);
+		System.out.println("Number of Disks I/O for MergeSort on " + relS.name + ": " + mergeSortSIO + "\n");
+		
+		System.out.println("[Hash Join Algorithm]");
+		relRS = new Relation("RelRS");
+		hashJoinIO = algo.hashJoinRelations(relR, relS, relRS);
+		System.out.println("Number of Disks I/O for Hash Join: " + hashJoinIO + "\n");
+		
+		System.out.println("[Refined Sort Merge Join Algorithm]");
+		relRS = new Relation("RelRS");
+		refinedSortMergeJoinIO = algo.refinedSortMergeJoinRelations(relR, relS, relRS);
+		System.out.println("Number of Disks I/O for Refined Sort Merge Join: " + refinedSortMergeJoinIO + "\n");
+		System.out.println("------------------------------------------------------------");
+		
+		
+		// ------------------------------------------------------------------------------------
+
+		System.out.println("(Test Case 3)");
+		Setting.blockFactor = 10;
+		Setting.memorySize = 13;
+		System.out.println("The block factor is " + Setting.blockFactor);
+		System.out.println("The memory size is " + Setting.memorySize);
+
+		relR = new Relation("RelR");
+		numTuples = relR.populateRelationFromFile("RelR.txt");
+		System.out.println("Relation RelR contains " + numTuples + " tuples.");
+		System.out.println("Relation RelR contains " + relR.getNumBlocks() + " blocks."); 
+		relS = new Relation("RelS");
+		numTuples = relS.populateRelationFromFile("RelS.txt");
+		System.out.println("Relation RelS contains " + numTuples + " tuples.");
+		System.out.println("Relation RelS contains " + relS.getNumBlocks() + " blocks.");
+		System.out.println("---------Finish populating relations----------\n");
+
+		System.out.println("[MergeSort Algorithm]");
+		mergeSortRIO = algo.mergeSortRelation(relR);
+		System.out.println("Number of Disks I/O for MergeSort on " + relR.name + ": " + mergeSortRIO + "\n");
+		mergeSortSIO = algo.mergeSortRelation(relS);
+		System.out.println("Number of Disks I/O for MergeSort on " + relS.name + ": " + mergeSortSIO + "\n");
+
+		System.out.println("[Hash Join Algorithm]");
+		relRS = new Relation("RelRS");
+		hashJoinIO = algo.hashJoinRelations(relR, relS, relRS);
+		System.out.println("Number of Disks I/O for Hash Join: " + hashJoinIO + "\n");
+
+		System.out.println("[Refined Sort Merge Join Algorithm]");
+		relRS = new Relation("RelRS");
+		refinedSortMergeJoinIO = algo.refinedSortMergeJoinRelations(relR, relS, relRS);
+		System.out.println("Number of Disks I/O for Refined Sort Merge Join: " + refinedSortMergeJoinIO + "\n");
+		System.out.println("------------------------------------------------------------");
 	}
 
 	/**
@@ -698,8 +876,6 @@ public class Algorithms {
 	 * @param arg
 	 */
 	public static void main(String[] arg) {
-		// Algorithms.examples();
-		
 		testCases();
 	}
 }
