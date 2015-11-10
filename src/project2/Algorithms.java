@@ -320,13 +320,24 @@ public class Algorithms {
 			mainMemoryBuffers[i] = new Block();
 		}
 		
-//		DELETE LATER		
-//
-//		for (int i = 0; i < rBuckets.size(); i++) {			
-//			ArrayList<Block> blocks = rBuckets.get(i);
-//			System.out.println("R Bucket " + i + " has size " + blocks.size());
-//		}
-//		
+		int rMin = rBuckets.get(0).size();
+		int rMax = rBuckets.get(0).size();
+		int rTotal = 0;
+		
+		for (ArrayList<Block> bucket : rBuckets) {
+			
+			if (bucket.size() < rMin) {
+				rMin = bucket.size();
+			}
+			if (bucket.size() > rMax) {
+				rMax = bucket.size();
+			}
+			
+			rTotal += bucket.size();
+		}
+		double rAvg = (double)rTotal / rBuckets.size();
+		
+		
 		// Step 1: Hash Relation S
 		RelationLoader sLoader = relS.getRelationLoader();
 		while (sLoader.hasNextBlock()) {
@@ -376,11 +387,22 @@ public class Algorithms {
 			mainMemoryBuffers[i] = null;
 		}
 
-		// DELETE LATER
-//		for (int i = 0; i < sBuckets.size(); i++) {
-//			ArrayList<Block> blocks = sBuckets.get(i);
-//			System.out.println("S Bucket " + i + " has size " + blocks.size());
-//		}
+		int sMin = sBuckets.get(0).size();
+		int sMax = sBuckets.get(0).size();
+		int sTotal = 0;
+		
+		for (ArrayList<Block> bucket : sBuckets) {
+			
+			if (bucket.size() < sMin) {
+				sMin = bucket.size();
+			}
+			if (bucket.size() > sMax) {
+				sMax = bucket.size();
+			}
+			
+			sTotal += bucket.size();
+		}
+		double sAvg = (double)sTotal / sBuckets.size();
 		
 		// Step 2: Perform Join
 		for (int i = 0; i < sBuckets.size(); i++) {
@@ -437,6 +459,14 @@ public class Algorithms {
 		}
 		
 		relRS.printRelation(false, false);
+		System.out.println("Number of buckets generated for R: " + rBuckets.size());
+		System.out.println("Maximum length of R bucket: " + rMax);
+		System.out.println("Minimum length of R bucket: " + rMin);
+		System.out.println("Average length of R bucket: " + rAvg);
+		System.out.println("Number of sublists generated for S: " + sBuckets.size());
+		System.out.println("Maximum length of S sublist: " + sMax);
+		System.out.println("Minimum length of S sublist: " + sMin);
+		System.out.println("Average length of S sublists: " + sAvg);
 		return numIO;
 	}
 	
