@@ -17,7 +17,9 @@ import project2.Relation.RelationWriter;
 public class Algorithms {
 
 	private static int count = 0;
-	
+	//pair class
+	// use in sorted sublist to store number of IO and sorted sublist
+	// use in refined sort merge join to store sublist name and tuple
 	static class Pair<Left, Right> {
 
         private final Left left;
@@ -36,11 +38,12 @@ public class Algorithms {
             return right;
         }
     }
-
+    //generate sorted sublist
 	public static Pair<Integer, List<Relation>> sortedSubList(Relation rel) {
         int numIO = 0;
         RelationLoader rLoader = rel.getRelationLoader();
         List<Relation> sublists = new ArrayList<Relation>();
+        //use the integer as the name of the relation
         Relation newRel = new Relation(String.valueOf(count));
         RelationWriter rWriter = newRel.getRelationWriter();
         Block b = new Block();
@@ -50,6 +53,7 @@ public class Algorithms {
             newRel = new Relation(String.valueOf(count));
             rWriter = newRel.getRelationWriter();
             List<Tuple> sort = new ArrayList();
+            //sort and add tuple into list
             for (Block block : blocks) {
                 if (block != null) {
                     for (Tuple p : block.tupleLst) {
@@ -64,7 +68,7 @@ public class Algorithms {
                     return t1.key - t2.key;
                 }
             });
-            
+            //add sorted tuple list into block
             b = new Block();
             for (int i = 0; i < sort.size(); i++) {
                 if (b.getNumTuples() < Setting.blockFactor) {
@@ -490,6 +494,9 @@ public class Algorithms {
 			return 0;
 		}
 
+		// ---------------------------------
+		// Phase 1: Produce sorted sublist
+
         // Create sorted sublists of size in Setting.memorySize, using Integer as the sort key, for relR and relS
         Pair<Integer, List<Relation>> SortedRelR = sortedSubList(relR);
         numIO += SortedRelR.left;
@@ -553,7 +560,11 @@ public class Algorithms {
         	System.out.println("There are more than M sublists, unable to do refined sort merge join.");
         	return 0;
         }
+        // ---------------------------------
+		// Phase 2
 
+		//Bring the first block of each sublist into a buffer
+		//R sublists
         for (Relation t : relT) {
             RelationLoader rLoader = t.getRelationLoader();
             inputBuffers.set(i, rLoader.loadNextBlocks(1)[0]);
@@ -561,7 +572,7 @@ public class Algorithms {
             i++;
             numIO++;
         }
-        
+        //S sublists
         for (Relation u : relU) {
             RelationLoader rLoader = u.getRelationLoader();
             inputBuffers.set(Integer.valueOf(u.name), rLoader.loadNextBlocks(1)[0]);
@@ -578,6 +589,9 @@ public class Algorithms {
             
             for (int noOfBuffer = 0; noOfBuffer < relT.size() + relU.size(); noOfBuffer++) {
                 if (inputBuffers.get(noOfBuffer) != null) {
+                	//replenish when one of the buffer is exhausted from the respective sublist
+                	//to differentiate R and S sublists, The size of R sublists is used. 
+                	//e.g if the size of R sublists is 4. During iteration, 0 to 3 will be for R sublists.
                     if (inputBuffers.get(noOfBuffer).getNumTuples() == 0) {
                         if (a < relT.size()) {
 
@@ -597,7 +611,7 @@ public class Algorithms {
                         }
                     }
                 }
-
+                //find the least value among the first available tuples of all the sublists
                 if (inputBuffers.get(noOfBuffer) != null && inputBuffers.get(noOfBuffer).getNumTuples() > 0) {
                     if (min > inputBuffers.get(noOfBuffer).tupleLst.get(0).key) {
                         SortedPair = new ArrayList<Pair>();
@@ -623,9 +637,11 @@ public class Algorithms {
             
             List<Tuple> tmpJoinR = new ArrayList<Tuple>();  // temporary list to store tuple which has the same min key
             List<Tuple> tmpJoinS = new ArrayList<Tuple>();
+            //exit the loop when all the sublist is empty
             if (SortedPair.size() == 0) {
                 break;
             }
+            //Identify all tuples in R and S that have the least value
             if (SortedPair.size() >= 1) {
                 for (Pair p : SortedPair) {
                     if (Integer.valueOf(p.left.toString()) >= relT.size()) {
@@ -686,14 +702,14 @@ public class Algorithms {
                     inputBuffers.get(blockNo).tupleLst.remove(0);
                 }
             }
-
+             //Output the join of all tuples of R with all of S with the common least value
             for (Tuple tr : tmpJoinR) {
                 for (Tuple ts : tmpJoinS) {
                     jointTuples.add(new JointTuple(tr, ts));
                 }
             }
         }
-        
+        //Add to Joint Tuple
         RelationWriter rsWriter = relRS.getRelationWriter();
         Block rsBlock = new Block();
         for (JointTuple jointTuple : jointTuples) {
