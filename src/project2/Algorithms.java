@@ -313,7 +313,7 @@ public class Algorithms {
 					mainMemoryBuffers[bucketToHashTo] = new Block();
 				}
 
-				// Add tuple into the respective bucket
+				// Add tuple into the respective buffer
 				mainMemoryBuffers[bucketToHashTo].insertTuple(tuple);
 			}
 		}
@@ -381,6 +381,7 @@ public class Algorithms {
 					mainMemoryBuffers[bucketToHashTo] = new Block();
 				}
 
+				// Add tuple into the respective buffer
 				mainMemoryBuffers[bucketToHashTo].insertTuple(tuple);
 			}
 		}
@@ -566,6 +567,7 @@ public class Algorithms {
         	System.out.println("There are more than M sublists, unable to do refined sort merge join.");
         	return 0;
         }
+        
         // ---------------------------------
 		// Phase 2
 
@@ -850,7 +852,8 @@ public class Algorithms {
 		refinedSortMergeJoinIO = algo.refinedSortMergeJoinRelations(relR, relS, relRS);
 		System.out.println("Number of Disks I/O for Refined Sort Merge Join: " + refinedSortMergeJoinIO + "\n");
 		System.out.println("------------------------------------------------------------");
-		// ------------------------------------------------------------------------------------
+		
+		// ---------------------------------------------------------------------------------------------
 		
 		System.out.println("(Test Case 2)");
 		Setting.blockFactor = 10;
@@ -885,8 +888,7 @@ public class Algorithms {
 		System.out.println("Number of Disks I/O for Refined Sort Merge Join: " + refinedSortMergeJoinIO + "\n");
 		System.out.println("------------------------------------------------------------");
 		
-		
-		// ------------------------------------------------------------------------------------
+		// ---------------------------------------------------------------------------------------------
 
 		System.out.println("(Test Case 3)");
 		Setting.blockFactor = 10;
@@ -921,8 +923,7 @@ public class Algorithms {
 		System.out.println("Number of Disks I/O for Refined Sort Merge Join: " + refinedSortMergeJoinIO + "\n");
 		System.out.println("------------------------------------------------------------");
 		
-		
-		// ------------------------------------------------------------------------------------
+		// ---------------------------------------------------------------------------------------------
 
 		System.out.println("(Test Case 4)");
 		Setting.blockFactor = 8;
