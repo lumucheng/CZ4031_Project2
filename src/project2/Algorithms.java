@@ -17,7 +17,8 @@ import project2.Relation.RelationWriter;
 public class Algorithms {
 
 	private static int count = 0;
-	//pair class
+	
+	// pair class
 	// use in sorted sublist to store number of IO and sorted sublist
 	// use in refined sort merge join to store sublist name and tuple
 	static class Pair<Left, Right> {
@@ -38,11 +39,13 @@ public class Algorithms {
             return right;
         }
     }
+	
     //generate sorted sublist
 	public static Pair<Integer, List<Relation>> sortedSubList(Relation rel) {
         int numIO = 0;
         RelationLoader rLoader = rel.getRelationLoader();
         List<Relation> sublists = new ArrayList<Relation>();
+        
         //use the integer as the name of the relation
         Relation newRel = new Relation(String.valueOf(count));
         RelationWriter rWriter = newRel.getRelationWriter();
@@ -53,6 +56,7 @@ public class Algorithms {
             newRel = new Relation(String.valueOf(count));
             rWriter = newRel.getRelationWriter();
             List<Tuple> sort = new ArrayList();
+            
             //sort and add tuple into list
             for (Block block : blocks) {
                 if (block != null) {
@@ -256,6 +260,7 @@ public class Algorithms {
 		ArrayList<ArrayList<Block>> sBuckets = new ArrayList<ArrayList<Block>>(M - 1);
 		ArrayList<JointTuple> jointTupleList = new ArrayList<JointTuple>();
 		
+		// Check if enough memory buffers
 		if (Math.min(relR.getNumBlocks(), relR.getNumBlocks()) > M * M) {
 			System.out.println("Size of memory not enough for Hash Join.");
 			return 0;
@@ -266,7 +271,7 @@ public class Algorithms {
 			mainMemoryBuffers[i] = new Block();
 		}
 
-		// Initialize M-1 buckets for relation R & S
+		// Initialize M-1 buckets for Relation R & S
 		// This will simulate the buckets that will be found on disk
 		for (int i = 0; i < M - 1; i++) {
 			ArrayList<Block> rBucket = new ArrayList<Block>(M-1);
@@ -308,6 +313,7 @@ public class Algorithms {
 					mainMemoryBuffers[bucketToHashTo] = new Block();
 				}
 
+				// Add tuple into the respective bucket
 				mainMemoryBuffers[bucketToHashTo].insertTuple(tuple);
 			}
 		}
@@ -422,6 +428,7 @@ public class Algorithms {
 			
 			// Read in one block from one bucket of R
 			for (Block rBlock : rBucket) {
+				mainMemoryBuffers[M-1] = rBlock;
 				numIO++;
 				
 				for (int y = 0; y < sBucket.size(); y++) {
@@ -442,7 +449,6 @@ public class Algorithms {
 				}
 			}
 		}
-		
 		
 		// Write join result to disk
 		RelationWriter rsWriter = relRS.getRelationWriter();
@@ -467,7 +473,7 @@ public class Algorithms {
 		System.out.println("Maximum length of R bucket: " + rMax);
 		System.out.println("Minimum length of R bucket: " + rMin);
 		System.out.println("Average length of R bucket: " + rAvg);
-		System.out.println("Number of sublists generated for S: " + sBuckets.size());
+		System.out.println("Number of buckets generated for S: " + sBuckets.size());
 		System.out.println("Maximum length of S sublist: " + sMax);
 		System.out.println("Minimum length of S sublist: " + sMin);
 		System.out.println("Average length of S sublists: " + sAvg);
@@ -847,8 +853,8 @@ public class Algorithms {
 		// ------------------------------------------------------------------------------------
 		
 		System.out.println("(Test Case 2)");
-		Setting.blockFactor = 20;
-		Setting.memorySize = 10;
+		Setting.blockFactor = 10;
+		Setting.memorySize = 15;
 		System.out.println("The block factor is " + Setting.blockFactor);
 		System.out.println("The memory size is " + Setting.memorySize);
 		
@@ -892,6 +898,42 @@ public class Algorithms {
 		numTuples = relR.populateRelationFromFile("RelR.txt");
 		System.out.println("Relation RelR contains " + numTuples + " tuples.");
 		System.out.println("Relation RelR contains " + relR.getNumBlocks() + " blocks."); 
+		relS = new Relation("RelS");
+		numTuples = relS.populateRelationFromFile("RelS.txt");
+		System.out.println("Relation RelS contains " + numTuples + " tuples.");
+		System.out.println("Relation RelS contains " + relS.getNumBlocks() + " blocks.");
+		System.out.println("---------Finish populating relations----------\n");
+
+		System.out.println("[MergeSort Algorithm]");
+		mergeSortRIO = algo.mergeSortRelation(relR);
+		System.out.println("Number of Disks I/O for MergeSort on " + relR.name + ": " + mergeSortRIO + "\n");
+		mergeSortSIO = algo.mergeSortRelation(relS);
+		System.out.println("Number of Disks I/O for MergeSort on " + relS.name + ": " + mergeSortSIO + "\n");
+
+		System.out.println("[Hash Join Algorithm]");
+		relRS = new Relation("RelRS");
+		hashJoinIO = algo.hashJoinRelations(relR, relS, relRS);
+		System.out.println("Number of Disks I/O for Hash Join: " + hashJoinIO + "\n");
+
+		System.out.println("[Refined Sort Merge Join Algorithm]");
+		relRS = new Relation("RelRS");
+		refinedSortMergeJoinIO = algo.refinedSortMergeJoinRelations(relR, relS, relRS);
+		System.out.println("Number of Disks I/O for Refined Sort Merge Join: " + refinedSortMergeJoinIO + "\n");
+		System.out.println("------------------------------------------------------------");
+		
+		
+		// ------------------------------------------------------------------------------------
+
+		System.out.println("(Test Case 4)");
+		Setting.blockFactor = 8;
+		Setting.memorySize = 13;
+		System.out.println("The block factor is " + Setting.blockFactor);
+		System.out.println("The memory size is " + Setting.memorySize);
+
+		relR = new Relation("RelR");
+		numTuples = relR.populateRelationFromFile("RelR.txt");
+		System.out.println("Relation RelR contains " + numTuples + " tuples.");
+		System.out.println("Relation RelR contains " + relR.getNumBlocks() + " blocks.");
 		relS = new Relation("RelS");
 		numTuples = relS.populateRelationFromFile("RelS.txt");
 		System.out.println("Relation RelS contains " + numTuples + " tuples.");
